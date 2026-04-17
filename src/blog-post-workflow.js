@@ -345,73 +345,91 @@ const runWorkflow = async () => {
 						'randomEmoji',
 					);
 					const constEmojiArr = getParameterisedTemplate(template, 'emojiKey');
-					const postListMarkdown = postsArray.reduce((acc, cur, index) => {
-						if (template === 'default') {
-							// Default template: - [$title]($url)
-							return `${acc}\n- [${cur.title}](${cur.url})${index + 1 === postsArray.length ? '\n' : ''}`;
-						}
-						// Building categories listing
-						const categoryTemplate = core.getInput('categories_template');
-						const categoryList =
-							categoryTemplate === 'default'
-								? cur.categories.join(', ')
-								: cur.categories.reduce(
-										(prev, current) =>
-											prev +
-											categoryTemplate.replace(
-												/\$category\b/g,
-												current.toString(),
-											),
-										'',
-									);
-						// Building with custom template
-						const date = dateFormat(cur.date, core.getInput('date_format')); // Formatting date
-						let content = template
-							.replace(/\$title\b/g, cur.title)
-							.replace(/\$url\b/g, cur.url)
-							.replace(/\$description\b/g, cur.description)
-							.replace(/\$date\b/g, date)
-							.replace(/\$counter\b/g, (index + 1).toString())
-							.replace(/\$feedName\b/g, cur.feedName ? cur.feedName : '')
-							.replace(/\$categories\b/g, categoryList.toString())
-							.replace(/\$newline/g, '\n');
-
-						// Setting Custom tags to the template
-						for (const tag of Object.keys(CUSTOM_TAGS)) {
-							const replaceValue = cur[tag] ? cur[tag] : '';
-							content = content.replace(
-								new RegExp(`\\$${tag}\\b`, 'g'),
-								replaceValue,
-							);
-						}
-
-						// Emoji implementation: Random
-						if (randEmojiArr) {
-							// For making randomness unique for each repos
-							let seed =
-								(process.env.GITHUB_REPOSITORY && !process.env.TEST_MODE
-									? process.env.GITHUB_REPOSITORY
-									: 'example') + index;
-							if (core.getInput('rand_seed')) {
-								// If manual seed is provided, use it
-								seed = core.getInput('rand_seed') + index;
-							}
-							const emoji =
-								randEmojiArr[rand.create(seed).range(randEmojiArr.length)];
-							content = content.replace(/\$randomEmoji\((\S)*\)/g, emoji);
-						}
-
-						// Emoji implementation: Static
-						if (constEmojiArr) {
-							// using modulus
-							content = content.replace(
-								/\$emojiKey\((\S)*\)/g,
-								constEmojiArr[index % constEmojiArr.length],
-							);
-						}
-
-						return acc + content;
-					}, '');
+					const buildPostContent = (cur, index, template, randEmojiArr, constEmojiArr, inTable = false) => {
+               if (template === 'default') {
+                  return inTable
+                    ? `<a href="${cur.url}">${cur.title}</a>`  
+                    : `- [${cur.title}](${cur.url})`;
+                }
+              const categoryTemplate = core.getInput('categories_template');
+              const categoryList =
+                categoryTemplate === 'default'
+                  ? cur.categories.join(', ')
+                  : cur.categories.reduce(
+                      (prev, current) =>
+                        prev + categoryTemplate.replace(/\$category\b/g, current.toString()),
+                      '',
+                    );
+              const date = cur.date ? dateFormat(cur.date, core.getInput('date_format')) : '';
+              let content = template
+                .replace(/\$title\b/g, cur.title)
+                .replace(/\$url\b/g, cur.url)
+                .replace(/\$description\b/g, cur.description)
+                .replace(/\$date\b/g, date)
+                .replace(/\$counter\b/g, (index + 1).toString())
+                .replace(/\$feedName\b/g, cur.feedName ? cur.feedName : '')
+                .replace(/\$categories\b/g, categoryList.toString())
+                .replace(/\$newline/g, '\n');
+            
+              for (const tag of Object.keys(CUSTOM_TAGS)) {
+                const replaceValue = cur[tag] ? cur[tag] : '';
+                content = content.replace(new RegExp(`\\$${tag}\\b`, 'g'), replaceValue);
+              }
+              if (randEmojiArr) {
+                let seed =
+                  (process.env.GITHUB_REPOSITORY && !process.env.TEST_MODE
+                    ? process.env.GITHUB_REPOSITORY
+                    : 'example') + index;
+                if (core.getInput('rand_seed')) seed = core.getInput('rand_seed') + index;
+                const emoji = randEmojiArr[rand.create(seed).range(randEmojiArr.length)];
+                content = content.replace(/\$randomEmoji\((\S)*\)/g, emoji);
+              }
+              if (constEmojiArr) {
+                content = content.replace(
+                  /\$emojiKey\((\S)*\)/g,
+                  constEmojiArr[index % constEmojiArr.length],
+                );
+              }
+              return content;
+            };
+            
+            const USE_TWO_COLUMNS = postsArray.length > 5;
+            core.info(`Post count: ${postsArray.length}, Using two columns: ${USE_TWO_COLUMNS}`);
+            
+            let postListMarkdown;
+            
+            if (USE_TWO_COLUMNS) {
+              // Split posts into two columns (left: even indices, right: odd indices)
+              const left = postsArray.filter((_, i) => i % 2 === 0);
+              const right = postsArray.filter((_, i) => i % 2 === 1);
+              const maxRows = left.length; // left always >= right due to ceil
+            
+              const htmlRows = Array.from({ length: maxRows }, (_, rowIndex) => {
+              const leftPost = left[rowIndex];
+              const leftIndex = rowIndex * 2;
+              const rightPost = right[rowIndex];
+              const rightIndex = rowIndex * 2 + 1;
+            
+              const leftCell = leftPost
+                ? buildPostContent(leftPost, leftIndex, template, randEmojiArr, constEmojiArr, true).replace(/\n/g, ' ').replace(/\|/g, '\\|')
+                : '';
+              const rightCell = rightPost
+                ? buildPostContent(rightPost, rightIndex, template, randEmojiArr, constEmojiArr, true).replace(/\n/g, ' ').replace(/\|/g, '\\|')
+                : '';
+            
+              return `<tr><td align="center">${leftCell}</td><td align="center">${rightCell}</td></tr>`;
+            });
+            
+            postListMarkdown = `\n<table>\n<tr><td width="500px"></td><td width="500px"></td></tr>\n${htmlRows.join('\n')}\n</table>\n`;
+            } else {
+              postListMarkdown = postsArray.reduce((acc, cur, index) => {
+                const content = buildPostContent(cur, index, template, randEmojiArr, constEmojiArr);
+                if (template === 'default') {
+                  return `${acc}\n${content}${index + 1 === postsArray.length ? '\n' : ''}`;
+                }
+                return acc + content;
+              }, '');
+            }
 
 					// Output only mode
 					const outputOnly = core.getInput('output_only') !== 'false';
