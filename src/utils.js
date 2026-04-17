@@ -70,12 +70,12 @@ const buildReadme = (previousContent, newContent) => {
 		process.exit(1);
 	}
 	return [
-		previousContent.slice(0, endOfOpeningTagIndex + closingTag.length),
-		tagNewlineFlag ? '\n' : '',
-		newContent,
-		tagNewlineFlag ? '\n' : '',
-		previousContent.slice(startOfClosingTagIndex),
-	].join('');
+      previousContent.slice(0, endOfOpeningTagIndex + closingTag.length),
+      '\n',
+      newContent,
+      '\n',
+      previousContent.slice(startOfClosingTagIndex),
+  ].join('');
 };
 
 /**
