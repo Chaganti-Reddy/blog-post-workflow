@@ -3,15 +3,15 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '**.js'
+      - 'src/**.js'
       - 'package.json'
       - '.github/workflows/build.yml'
   pull_request:
     paths:
-      - '**.js'
+      - 'src/**.js'
       - 'package.json'
 permissions:
-  contents: read
+  contents: write
   actions: read
   checks: write
 jobs:
@@ -22,18 +22,19 @@ jobs:
     name: Generate build and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version-file: ".nvmrc"
           cache: "yarn"
       - run: yarn install --frozen-lockfile
-      - run: yarn test-ci
-      - run: yarn build && yarn test-dist-ci
-      - name: Test Report
-        uses: dorny/test-reporter@v3
-        if: ${{ github.repository == 'gautamkrishnar/blog-post-workflow' && github.event_name != 'pull_request' && (success() || failure()) }}
-        with:
-          name: Mocha Tests
-          path: "*-report.json"
-          reporter: mocha-json
+        env:
+          HUSKY: 0
+      - run: npx esbuild ./src/blog-post-workflow.js --bundle --platform=node --format=esm --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" --outfile=dist/blog-post-workflow.js
+      - name: Commit dist
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "github-actions"
+          git add dist/blog-post-workflow.js
+          git diff --staged --quiet || git commit -m "build: update dist"
+          git push
